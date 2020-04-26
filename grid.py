@@ -21,8 +21,8 @@ def getRandomSample(array, n):
         return list(zip(idx, idy, sample))
 
 def getNeighbours(array, randomSample, radius):
-    '''Get the neighbours of randomSample[:, 2] within a radius.
-    Border cases include -1 for missing neighbours.'''
+    """Get the neighbours of randomSample[:, 2] within a radius.
+    Border cases include -1 for missing neighbours."""
 
     maxNeighbours = (2*radius + 1)**2 - 1
     sampleSize = len(randomSample)
@@ -44,6 +44,21 @@ def getNeighbours(array, randomSample, radius):
         neighbours[i, :surrounding.shape[0]] = surrounding
 
     return neighbours
+
+def updateGrid(array, community):
+    """shuffle array based on Mersenne Twister algorithm in np.random"""
+    
+    #shuffle grid along both axes
+    np.apply_along_axis(np.random.shuffle, 1, array)
+    np.random.shuffle(array)
+    
+    #update locations of individuals
+    getLoc = lambda x : (x // array.shape[0], x % array.shape[1])
+    r = array.ravel()
+    for i in range(array.size):
+        community.people[r[i]].updateLoc(getLoc(i))
+    
+    return array
 
 #testing
 community = np.arange(100).reshape(10, 10)
