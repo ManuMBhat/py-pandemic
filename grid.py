@@ -60,6 +60,21 @@ def updateGrid(array, community):
     
     return array
 
+def gridCrossing(grid1, grid2, n):
+    """Exchange n randomly selected individuals between grid1 and grid2.
+    Returns as (grid1, grid2)"""
+    
+    if n > grid1.size or n > grid2.size:
+        raise ValueError("number of individuals must be less than size of grid")
+
+    id1x = np.random.choice(grid1.shape[0], size=n, replace=False)
+    id1y = np.random.choice(grid1.shape[1], size=n, replace=False)
+    id2x = np.random.choice(grid2.shape[0], size=n, replace=False)
+    id2y = np.random.choice(grid1.shape[1], size=n, replace=False)
+    grid1[id1x, id1y], grid2[id2x, id2y] = grid2[id2x, id2y], grid1[id1x, id1y]
+
+    return (grid1, grid2)
+
 #testing
 community = np.arange(100).reshape(10, 10)
 print(community)
