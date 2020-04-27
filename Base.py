@@ -5,6 +5,19 @@ import pylab
 MAX_GDP = 1000000000000
 random.seed(0)
 deathChance = 0.05
+
+
+"""
+    Helper function
+    Chooses a destination city and adds traveller to that city
+"""
+def travel_to_destination(cities,originCityName,traveller):
+    destination = originCityName
+    while(destination == originCityName):
+        destination = random.choice(cities)
+    destination.add_person(traveller)
+
+
 class Person(object):
     def __init__(self,city,infected):
         self.city = city
@@ -70,6 +83,7 @@ class City(object):
     def travelling_population(self,restriction = 1):
         self.noOfTravellers = (restriction * self.gdp * self.population)//MAX_GDP
         self.travellers = random.sample(self.people,self.noOfTravellers)
+        self.population -= self.noOfTravellers
         for i in self.travellers:
             self.people.remove(i)
 
@@ -91,9 +105,11 @@ class City(object):
                 probabilityOfDeath = random.uniform(0,1)
                 if probabilityOfDeath <= deathChance:
                     i.set_alive(0)
+                    i.set_infected(0)
                     self.people.remove(i)
+                    self.population -=1
         
-        self.infected = list(reduce(lambda x: x.infected == 1 , self.people))
+        self.infected = list(reduce(lambda x: x.infected == 1, self.people))
 
 
 
