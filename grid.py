@@ -60,9 +60,12 @@ def updateGrid(array, community):
     
     return array
 
-def gridCrossing(grid1, grid2, n):
-    """Exchange n randomly selected individuals between grid1 and grid2.
+def equalGridCrossing(grid1, grid2, n):
+    """Shuffle n randomly selected individuals between grid1 and grid2.
     Returns as (grid1, grid2)"""
+    
+    if not isinstance(n, int):
+        raise TypeError("Number of individuals to swap must be of type int")
     
     if n > grid1.size or n > grid2.size:
         raise ValueError("number of individuals must be less than size of grid")
@@ -70,15 +73,52 @@ def gridCrossing(grid1, grid2, n):
     id1x = np.random.choice(grid1.shape[0], size=n, replace=False)
     id1y = np.random.choice(grid1.shape[1], size=n, replace=False)
     id2x = np.random.choice(grid2.shape[0], size=n, replace=False)
-    id2y = np.random.choice(grid1.shape[1], size=n, replace=False)
+    id2y = np.random.choice(grid2.shape[1], size=n, replace=False)
     grid1[id1x, id1y], grid2[id2x, id2y] = grid2[id2x, id2y], grid1[id1x, id1y]
 
     return (grid1, grid2)
 
+def unequalGridCrossing(grid1, grid2, outGrid1, outGrid2):
+    """Shuffle in a way that one grid loses abs(outGrid1 - outGrid2) individuals.
+    If outGrid1 is equal to outGrid2 call equalGridCrossing."""
+    
+    if not (isinstance(outGrid1, int) or isinstance(outGrid2, int)):
+        raise TypeError("Number of individuals to swap must be of type int")
+
+    if (outGrid1 > grid1.size or outGrid2 > grid2.size):
+        raise ValueError("Cannot relocate more than grid population")
+    
+    id1x = np.random.choice(grid1.shape[0], size=outGrid1, replace=False)
+    id1y = np.random.choice(grid1.shape[1], size=outGrid1, replace=False)
+    id2x = np.random.choice(grid2.shape[0], size=outGrid2, replace=False)
+    id2y = np.random.choice(grid2.shape[1], size=outGrid2, replace=False)
+    excess = abs(outGrid1 - outGrid2)
+
+    if outGrid1 > outGrid2:
+        #swap individuals that can be relocated in place
+        grid1[id1x[:-excess], id1y[:-excess]], grid2[id2x, id2y] = grid2[id2x, id2y], grid1[id1x[:-excess], id1y[:-excess]]
+        #swap excess
+        nrow = np.full(grid2.shape[1], -1)
+        nrow[:excess] = grid1[id1x[outGrid2:], id1y[outGrid2:]]
+        #mark lost individuals in grid1 as -1
+        grid1[id1x[outGrid2:], id1y[outGrid2:]] = -1
+        #stack the new row created
+        grid2 = np.vstack((grid2, nrow))
+
+    elif outGrid2 > outGrid1:
+        grid2[id2x[:-excess], id2y[:-excess]], grid1[id1x, id1y] = grid1[id1x, id1y], grid2[id2x[:-excess], id2y[:-excess]]
+        nrow = np.full(grid1.shape[1], -1)
+        nrow[:excess] = grid2[id2x[excess:], id2y[excess:]]
+        grid2[id2x[excess:], id2y[excess:]] = -1
+        grid1 = np.vstack((grid1, nrow))
+    
+    else :
+        return equalGridCrossing(grid1, grid2, outGrid1)
+    
+    return (grid1, grid2)
+
 #testing
-community = np.arange(100).reshape(10, 10)
-print(community)
-sample = getRandomSample(community, 7)
-print(sample)
-x = getNeighbours(community, sample, 1)
-print(x)
+community1 = np.arange(100).reshape(10, 10)
+community2 = np.arange(100).reshape(10, 10)
+a, b = unequalGridCrossing(community1, community2, 7, 2)
+print(a, b, sep='\n')
