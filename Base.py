@@ -12,11 +12,12 @@ deathChance = 0.05
 R0list = [2, 3, 4]
 #recoveryTimes = [i for i in range(14, 7*5)]
 recoveryTimes = [i for i in range(4, 12)]
+
 """
     Helper function
     Chooses a destination city and adds traveller to that city
 """
-def travel_to_destination(cities,originCityName,traveller):
+def travel_to_destination(cities, originCityName, traveller):
     destination = originCityName
     while(destination == originCityName):
         destination = random.choice(cities)
@@ -31,13 +32,9 @@ class Person:
         self.loc = location
         self.recoveryTime = random.choice(recoveryTimes)
         self.R0 = random.choice(R0list)
-        self.neighbours = None
 
     def __str__(self):
         return str(self.state)
-
-    def updateNeighbours(self, neighbours):
-        self.neighbours = neighbours
 
     def getCity(self):
         return self.city
@@ -50,25 +47,38 @@ class Person:
 
 class Community:
     """A larger unit of epidemic modelling (possibly in India)."""
-    totalInfected = 0
-    totalRecovered = 0
+    __totalInfected = 0
+    __totalRecovered = 0
 
     def __init__(self, city, N):
         self.city = city
         self.shape = getClosestFactors(N)
         self.people = [Person(city, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
-        self.numPeople = N
+        self.__numPeople = N
         self.grid = np.arange(N).reshape(self.shape)
+
+    def getTotalInfected(self):
+        return self.__totalInfected
+
+    def getTotalRecovered(self):
+        return self.__totalRecovered
+
+    def getTotalSusceptible(self):
+        return (self.__numPeople - self.__totalInfected - self.__totalRecovered)
 
     def getInfected(self):
         """returns in the form (x, y, array[x, y])"""
         
-        base = np.arange(self.numPeople).reshape(self.grid.shape)
+        base = np.arange(self.__numPeople).reshape(self.grid.shape)
         ifInfected = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
         mask = ifInfected(self.grid)
         infected = self.grid[mask]
+        
+        if infected.size == 0 :
+            raise ValueError("No individual is currently infected")
+
         getLoc = np.vectorize(lambda x : (x // base.shape[0], x % base.shape[1]))
-        ifx, ify = getLoc(infected)
+        ifx, ify = getLoc(base[mask])
 
         return list(zip(ifx, ify, infected))
 
@@ -77,7 +87,9 @@ class Community:
         stateGrid = np.chararray(grid.shape, unicode=True)
         stateGrid[:] = 'S'
         f = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
+        g = np.vectorize(lambda x : True if self.people[x].state == 'R' else False)
         stateGrid[f(grid)] = 'I'
+        stateGrid[g(grid)] = 'R'
 
         print(stateGrid)
 
@@ -127,9 +139,14 @@ class Community:
         """shuffle array based on Mersenne Twister algorithm in np.random;
         Also update the location and state of each individual in community."""
         
-        #shuffle grid along both axes
-        np.apply_along_axis(np.random.shuffle, 1, self.grid)
-        np.random.shuffle(self.grid)
+        #mark individuals as recovered/deceased if they've crossed their recovery time
+        maskfunc = lambda x : True if self.people[x].timeInfected >= self.people[x].recoveryTime else False
+        maskfunc = np.vectorize(maskfunc)
+        recovered = self.grid[maskfunc(self.grid)]
+        for i in recovered:
+            self.people[i].updateState('R')
+            self.__totalRecovered += 1
+            self.__totalInfected -= 1
         
         #infect neighbours of those infected based upon individual's R0
         infected = self.getInfected()
@@ -141,24 +158,22 @@ class Community:
             #increase individual's infected time
             self.people[infectedPeople[k]].timeInfected += 1
             #spread the disease
-            spread = np.random.choice(neighboursOfInfected[k, neighboursOfInfected[k] > -1], 
-            size=infectedR0s[k], replace=False)
+            currentNeighbours = neighboursOfInfected[k, neighboursOfInfected[k] > -1]
+            spread = np.random.choice(currentNeighbours, 
+            size=min(currentNeighbours.size, infectedR0s[k]), replace=False)
             for l in spread:
-                if self.people[l].getState() != 'R':
+                if self.people[l].getState() == 'S':
                     self.people[l].updateState('I')
-
-        #mark individuals as recovered/deceased if they've crossed their recovery time
-        maskfunc = lambda x : True if self.people[x].timeInfected >= self.people[x].recoveryTime else False
-        maskfunc = np.vectorize(maskfunc)
-        recovered = self.grid[maskfunc(self.grid)]
-        for i in recovered:
-            self.people[i].updateState('R')
+                    self.__totalInfected += 1
 
         #update state and locations of individuals
         self.updateLocations()
-        
-        return self.grid
+        #show the state
+        self.showState()
 
+        #shuffle grid along both axes
+        np.apply_along_axis(np.random.shuffle, 1, self.grid)
+        np.random.shuffle(self.grid)
 
 class City(object):
     def __init__(self, name, population, gdp, healthCare):
