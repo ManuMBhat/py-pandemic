@@ -7,7 +7,7 @@ def test():
     output = list()
     death = list()
     
-    a = City("Mumbai",1000000,240000000000,0.3)
+    a = City("Mumbai", 1000000, 240000000000, 0.3)
     person = a.get_person(10)
     person.set_infected(1)
     for i in range(nums):
@@ -30,4 +30,3 @@ def test():
         
 if __name__ == "__main__":
     test()
-    

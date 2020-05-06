@@ -1,4 +1,5 @@
-import numpy as np 
+import math
+import numpy as np
 import random
 import functools
 import matplotlib.pyplot as plt
@@ -27,17 +28,18 @@ class Person:
     state = 'S'
     timeInfected = 0
 
-    def __init__(self, city, location):
-        self.city = city
+    def __init__(self, community, location):
+        self.community = community
         self.loc = location
+        self.isTravelling = False
         self.recoveryTime = random.choice(recoveryTimes)
         self.R0 = random.choice(R0list)
 
     def __str__(self):
         return str(self.state)
 
-    def getCity(self):
-        return self.city
+    def getCommunity(self):
+        return self.community
 
     def updateState(self, val):
         self.state = val
@@ -50,10 +52,11 @@ class Community:
     __totalInfected = 0
     __totalRecovered = 0
 
-    def __init__(self, city, N):
+    def __init__(self, city, name, N):
         self.city = city
+        self.name = name
         self.shape = getClosestFactors(N)
-        self.people = [Person(city, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
+        self.people = [Person(self.name, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
         self.__numPeople = N
         self.grid = np.arange(N).reshape(self.shape)
 
@@ -84,12 +87,14 @@ class Community:
 
     def showState(self):
         grid = self.grid
-        stateGrid = np.chararray(grid.shape, unicode=True)
-        stateGrid[:] = 'S'
-        f = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
-        g = np.vectorize(lambda x : True if self.people[x].state == 'R' else False)
-        stateGrid[f(grid)] = 'I'
-        stateGrid[g(grid)] = 'R'
+        stateGrid = np.chararray(self.grid.shape, unicode=True)
+        for i in range(stateGrid.shape[0]):
+            for j in range(stateGrid.shape[1]):
+                p = grid[i, j]
+                if p != -1:
+                    stateGrid[i, j] = p
+                else:
+                    stateGrid = -1
 
         print(stateGrid)
 
@@ -130,10 +135,20 @@ class Community:
         return neighbours
 
     def updateLocations(self):
-        getLoc = lambda x : (x // self.grid.shape[0], x % self.grid.shape[1])
-        r = self.grid.ravel()
+        #generate a meshgrid and zip the flattened arrays for coords
+        x = np.arange(self.grid.shape[0])
+        y = np.arange(self.grid.shape[1])
+        xx, yy = np.meshgrid(x, y)
+        locs = list(zip(yy.ravel(), xx.ravel()))
+
+        r = self.grid.ravel()[self.grid.ravel() > -1]
         for i in range(self.grid.size):
-            self.people[r[i]].loc = getLoc(i)
+            fella = self.people[r[i]]
+            if not fella.isTravelling():
+                fella.loc = locs[i]
+            else:
+                #update for outsiders
+                eval(fella.community).people[r[i]].loc = locs[i]
 
     def updateGrid(self):
         """shuffle array based on Mersenne Twister algorithm in np.random;
@@ -159,8 +174,8 @@ class Community:
             self.people[infectedPeople[k]].timeInfected += 1
             #spread the disease
             currentNeighbours = neighboursOfInfected[k, neighboursOfInfected[k] > -1]
-            spread = np.random.choice(currentNeighbours, 
-            size=min(currentNeighbours.size, infectedR0s[k]), replace=False)
+            spread = np.random.choice(currentNeighbours, size=min(currentNeighbours.size, 
+                                      infectedR0s[k]), replace=False)
             for l in spread:
                 if self.people[l].getState() == 'S':
                     self.people[l].updateState('I')
@@ -199,6 +214,7 @@ class City(object):
     
     def get_avgPeopleContact(self):
         return self.avgPeopleContact
+    
     def get_healthCare(self):
         return self.healthCare
 
@@ -218,25 +234,23 @@ class City(object):
     def get_travellers(self):
         return self.travellers
 
-    def social_distancing_protocol(self,socialDistanceVal):
-        self.avgPeopleContact = (1 - socialDistanceVal) * self.avgPeopleContact
-        self.avgPeopleContact = int(self.avgPeopleContact//1)
+    def social_distancing_protocol(self, socialDistanceVal):
+        self.avgPeopleContact = math.floor((1 - socialDistanceVal) * self.avgPeopleContact)
 
-    def travelling_population(self,restriction = 1):
+    def travelling_population(self, restriction=1):
         self.noOfTravellers = (restriction * self.gdp * self.population)//MAX_GDP
-        self.travellers = random.sample(self.people,self.noOfTravellers)
+        self.travellers = random.sample(self.people, self.noOfTravellers)
         self.population -= self.noOfTravellers
         for i in self.travellers:
             self.people.remove(i)
 
     def infection_run(self):
-        
         R0 = self.avgPeopleContact * self.transmission//1
         num_infection = int((R0 * len(self.infected))//1)
         sample = random.sample(self.people,num_infection)
         for i in sample:
             i.set_infected(1)
-        self.infected = list(filter(lambda x: x.infected == 1 , self.people))
+        self.infected = list(filter(lambda x : x.infected == 1, self.people))
 
 
     def health_run(self):
