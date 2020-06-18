@@ -28,10 +28,10 @@ class Person:
     state = 'S'
     timeInfected = 0
 
-    def __init__(self, community, location):
+    def __init__(self, city, community, location):
+        self.city = city
         self.community = community
         self.loc = location
-        self.isTravelling = False
         self.recoveryTime = random.choice(recoveryTimes)
         self.R0 = random.choice(R0list)
 
@@ -48,7 +48,7 @@ class Person:
         return self.state
 
 class Community:
-    """A larger unit of epidemic modelling (possibly in India)."""
+    """A larger unit of epidemic modelling (possibly a small sized community in India)."""
     __totalInfected = 0
     __totalRecovered = 0
 
@@ -56,9 +56,10 @@ class Community:
         self.city = city
         self.name = name
         self.shape = getClosestFactors(N)
-        self.people = [Person(self.name, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
+        self.people = [Person(self.city, self.name, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
         self.__numPeople = N
         self.grid = np.arange(N).reshape(self.shape)
+        self.outsiders = dict()
 
     def getTotalInfected(self):
         return self.__totalInfected
@@ -69,13 +70,26 @@ class Community:
     def getTotalSusceptible(self):
         return (self.__numPeople - self.__totalInfected - self.__totalRecovered)
 
-    def getInfected(self):
+    def getInfected(self, city=None):
         """returns in the form (x, y, array[x, y])"""
         
         base = np.arange(self.__numPeople).reshape(self.grid.shape)
-        ifInfected = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
-        mask = ifInfected(self.grid)
-        infected = self.grid[mask]
+        if city is None:            
+            ifInfected = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
+            mask = ifInfected(self.grid)
+            infected = self.grid[mask]
+        else:
+            infected = list()
+            for p in self.grid.ravel():
+                try:
+                    pstate = self.people[p].state
+                except IndexError:
+                    #deal with outsiders
+                    communityID, localID = divmod(p, self.__numPeople)
+                    pstate = city.Communities[communityID].people[localID].state
+                if pstate == 'I':
+                    infected.append(p)
+            infected = np.array(infected)
         
         if infected.size == 0 :
             raise ValueError("No individual is currently infected")
@@ -85,28 +99,44 @@ class Community:
 
         return list(zip(ifx, ify, infected))
 
-    def showState(self):
-        grid = self.grid
-        stateGrid = np.chararray(self.grid.shape, unicode=True)
-        for i in range(stateGrid.shape[0]):
-            for j in range(stateGrid.shape[1]):
-                p = grid[i, j]
+    def showState(self, city=None):
+        rgrid = self.grid.ravel()
+        stateGrid = np.empty(self.grid.shape, dtype=np.dtype('<U1'))
+        sgview = stateGrid.ravel()
+        for i in range(rgrid.size):
+            p = rgrid[i]
+            try:
                 if p != -1:
-                    stateGrid[i, j] = p
+                    sgview[i] = self.people[p].state
                 else:
-                    stateGrid = -1
+                    sgview[i] = p
 
+            #deal with outsiders
+            except IndexError:
+                if city is not None:
+                    communityID, localID = divmod(p, self.__numPeople)
+                    sgview[i] = city.Communities[communityID].people[localID].state
+                else:
+                    print("this is embarrassing, pls fix") 
+        
         print(stateGrid)
 
     def getRandomSample(self, n):
-        """returns in the form (x, y, array[x, y])"""
+        """Returns in the form (x, y, array[x, y]).
+        Does not return blanks ie -1 in grid"""
 
         if n > self.grid.size:
             raise ValueError("Sample size must be smaller than number of elements in array")
+        
         else:
-            idx = np.random.choice(self.grid.shape[0], size=n, replace=False)
-            idy = np.random.choice(self.grid.shape[1], size=n, replace=False)
+            #check for blank entries before grabbing location
+            flattened = np.arange(self.grid.size)[np.where(self.grid.ravel() > -1)]
+            
+            ids = np.random.choice(flattened, size=n, replace=False)
+            idx = ids // self.grid.shape[0]
+            idy = ids % self.grid.shape[1]
             sample = self.grid[idx, idy]
+            
             return list(zip(idx, idy, sample))
 
     def getNeighbours(self, randomSample, radius):
@@ -134,70 +164,105 @@ class Community:
 
         return neighbours
 
-    def updateLocations(self):
+    def updateLocations(self, city=None):
         #generate a meshgrid and zip the flattened arrays for coords
         x = np.arange(self.grid.shape[0])
         y = np.arange(self.grid.shape[1])
         xx, yy = np.meshgrid(x, y)
         locs = list(zip(yy.ravel(), xx.ravel()))
 
-        r = self.grid.ravel()[self.grid.ravel() > -1]
-        for i in range(self.grid.size):
-            fella = self.people[r[i]]
-            if not fella.isTravelling():
-                fella.loc = locs[i]
-            else:
-                #update for outsiders
-                eval(fella.community).people[r[i]].loc = locs[i]
+        r = self.grid.ravel()
+        for i in range(r.size):
+            p = r[i]
+            if p != -1:
+                try:
+                    self.people[p].loc = locs[i]
+                #deal with outsiders
+                except IndexError:
+                    if city is not None:
+                        communityID, localID = divmod(p, self.__numPeople)
+                        city.Communities[communityID].people[localID].loc = locs[i]
+                    else:
+                        print("this is embarrassing, pls fix")
 
-    def updateGrid(self):
+    def updateGrid(self, city=None):
         """shuffle array based on Mersenne Twister algorithm in np.random;
         Also update the location and state of each individual in community."""
-        
-        #mark individuals as recovered/deceased if they've crossed their recovery time
-        maskfunc = lambda x : True if self.people[x].timeInfected >= self.people[x].recoveryTime else False
-        maskfunc = np.vectorize(maskfunc)
-        recovered = self.grid[maskfunc(self.grid)]
-        for i in recovered:
-            self.people[i].updateState('R')
-            self.__totalRecovered += 1
-            self.__totalInfected -= 1
-        
+
         #infect neighbours of those infected based upon individual's R0
         infected = self.getInfected()
         neighboursOfInfected = self.getNeighbours(infected, 1)
         infectedPeople = list(zip(*infected))[2]
-        infectedR0s = np.array([self.people[x].R0 for x in infectedPeople])
+
+        infectedR0s = list()
+        for x in infectedPeople:
+            try:
+                infectedR0s.append(self.people[x].R0)
+            #deal with pesky outsiders
+            except IndexError:
+                if city is not None:
+                    communityID, localID = divmod(x, self.__numPeople)
+                    infectedR0s.append(city.Communities[communityID].people[localID].R0)
+                else:
+                    print("this is embarrassing, pls fix")
+        infectedR0s = np.array(infectedR0s)
 
         for k in range(len(infected)):
-            #increase individual's infected time
-            self.people[infectedPeople[k]].timeInfected += 1
             #spread the disease
             currentNeighbours = neighboursOfInfected[k, neighboursOfInfected[k] > -1]
-            spread = np.random.choice(currentNeighbours, size=min(currentNeighbours.size, 
+            spread = np.random.choice(currentNeighbours, size=min(currentNeighbours.size,
                                       infectedR0s[k]), replace=False)
             for l in spread:
-                if self.people[l].getState() == 'S':
-                    self.people[l].updateState('I')
+                try:
+                    unluckyNeighbour = self.people[l]
+                #deal with pesky outsiders
+                except IndexError:
+                    if city is not None:
+                        communityID, localID = divmod(l, self.__numPeople)
+                        unluckyNeighbour = city.Communities[communityID].people[localID]
+                    else:
+                        print("this is embarrassing, pls fix")
+                if unluckyNeighbour.getState() == 'S':
+                    unluckyNeighbour.updateState('I')
                     self.__totalInfected += 1
+            
+            try:
+                p = self.people[infectedPeople[k]]
+            except IndexError:
+                communityID, localID = divmod(p, self.__numPeople)
+                p = city.Communities[communityID].people[localID]
+            
+            #increase individual's infected time
+            p.timeInfected += 1
+            #mark individuals as recovered/deceased if they've crossed their recovery time
+            if p.timeInfected >= p.recoveryTime:
+                p.updateState('R')
+                self.__totalRecovered += 1
+                self.__totalInfected -= 1
+
 
         #update state and locations of individuals
         self.updateLocations()
         #show the state
         self.showState()
-
         #shuffle grid along both axes
         np.apply_along_axis(np.random.shuffle, 1, self.grid)
         np.random.shuffle(self.grid)
 
-class City(object):
+class City:
+    __noOfTravellers = 0
+    __numSusceptible = 0
+    __numInfected = 0
+    __numRecovered = 0
+
     def __init__(self, name, population, gdp, healthCare):
         self.name = name
         self.population = population
         self.gdp = gdp
         self.healthCare = healthCare
-        self.noOfTravellers = 0
-        self.people = [Person(self.name,0) for _ in range(self.population)]
+        #Community size fixed to 100 as of now
+        self.numCommunities = population // 100
+        self.Communities = [Community(self.name, _, 100) for _ in range(self.numCommunities)]
         self.avgPeopleContact = 15
         self.transmission = 0.2
         self.infected = list()
@@ -205,7 +270,55 @@ class City(object):
 
     def __str__(self):
         return self.name
+
+    def equalGridCrossing(self, c1, c2, n):
+        """Shuffle n randomly selected individuals between grid1 and grid2.
+        Returns as (grid1, grid2)"""
+        
+        if not isinstance(n, int):
+            raise TypeError("Number of individuals to swap must be of type int")
+        
+        grid1, grid2 = self.Communities[c1].grid, self.Communities[c2].grid
+        if n > grid1.size or n > grid2.size:
+            raise ValueError("number of individuals must be less than size of grid")
+
+        #way to differentiate travellers from residents - local v global ID
+        globalIDext = lambda c : c * self.Communities[c].__numPeople
+        #localIDrev = lambda x, c : x % self.Communities[c].__numPeople
+
+        flattened1 = np.arange(grid1.size)[np.where(grid1.ravel() > -1)]
+        id1s = np.random.choice(flattened1, size=n, replace=False)
+        id1x = id1s // grid1.shape[0]
+        id1y = id1s % grid1.shape[1]
+        out1 = grid1[id1x, id1y] + globalIDext(c1)
+
+        flattened2 = np.arange(grid2.size)[np.where(grid2.ravel() > -1)]
+        id2s = np.random.choice(flattened2, size=n, replace=False)
+        id2x = id2s // grid2.shape[0]
+        id2y = id2s % grid2.shape[1]
+        out2 = grid2[id2x, id2y] + globalIDext(c2)
+
+        grid1[id1x, id1y], grid2[id2x, id2y] = out2, out1
+
+        return (grid1, grid2)
     
+    def updateCity(self):
+        #traveling not implemented
+        for c in self.Communities:
+            c.updateGrid(city=self)
+            self.__numSusceptible += c.getTotalSusceptible
+            self.__numInfected += c.getTotalInfected
+            self.__numRecovered += c.getTotalRecovered
+
+    def getNumInfected(self):
+        return self.__numInfected
+
+    def getNumSusceptible(self):
+        return self.__numSusceptible
+
+    def getNumRecovered(self):
+        return self.__numRecovered
+
     def get_population(self):
         return self.population
     
@@ -218,52 +331,11 @@ class City(object):
     def get_healthCare(self):
         return self.healthCare
 
-    def get_person(self,index):
-        return self.people[index]
-
-    def get_infected_num(self):
-        return len(self.infected)
-
     def set_healthCare(self,val):
         self.healthCare = val
-
-    def add_person(self,person):
-        self.population += 1
-        self.people.append(person)
-
-    def get_travellers(self):
-        return self.travellers
 
     def social_distancing_protocol(self, socialDistanceVal):
         self.avgPeopleContact = math.floor((1 - socialDistanceVal) * self.avgPeopleContact)
 
-    def travelling_population(self, restriction=1):
-        self.noOfTravellers = (restriction * self.gdp * self.population)//MAX_GDP
-        self.travellers = random.sample(self.people, self.noOfTravellers)
-        self.population -= self.noOfTravellers
-        for i in self.travellers:
-            self.people.remove(i)
-
-    def infection_run(self):
-        R0 = self.avgPeopleContact * self.transmission//1
-        num_infection = int((R0 * len(self.infected))//1)
-        sample = random.sample(self.people,num_infection)
-        for i in sample:
-            i.set_infected(1)
-        self.infected = list(filter(lambda x : x.infected == 1, self.people))
-
-
-    def health_run(self):
-        for i in self.infected:
-            probabilityOfCure = random.SystemRandom().uniform(0,1)
-            if probabilityOfCure <= self.healthCare:
-                i.set_infected(0)
-            else:
-                probabilityOfDeath = random.SystemRandom().uniform(0,1)
-                if probabilityOfDeath <= deathChance:
-                    i.set_alive(0)
-                    i.set_infected(0)
-                    self.people.remove(i)
-                    self.population -=1
-        
-        self.infected = list(filter(lambda x: x.infected == 1, self.people))
+    def setTravellingPopulation(self, restriction=1):
+        self.__noOfTravellers = (restriction * self.gdp * self.population)//MAX_GDP
