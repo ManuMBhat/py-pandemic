@@ -1,10 +1,7 @@
 import math
 import numpy as np
 import random
-import functools
-import matplotlib.pyplot as plt
-
-from utils import *
+from utils import squareGridShape, getBoundary
 
 MAX_GDP = 1000000000000
 random.seed(0)
@@ -55,10 +52,15 @@ class Community:
     def __init__(self, city, name, N):
         self.city = city
         self.name = name
-        self.shape = getClosestFactors(N)
+        self.shape = squareGridShape(N)
         self.people = [Person(self.city, self.name, (i // self.shape[0], i % self.shape[1])) for i in range(N)]
         self.__numPeople = N
+
         self.grid = np.arange(N).reshape(self.shape)
+        #mark blanks
+        if N < self.grid.size:
+            self.grid.ravel()[N:] = -1
+
         self.outsiders = dict()
 
     def getTotalInfected(self):
@@ -74,13 +76,19 @@ class Community:
         """returns in the form (x, y, array[x, y])"""
         
         base = np.arange(self.__numPeople).reshape(self.grid.shape)
+        getLoc = lambda x : (x // base.shape[0], x % base.shape[1])
+        infected = list()
+        ifx, ify = list(), list()
+
         if city is None:            
             ifInfected = np.vectorize(lambda x : True if self.people[x].state == 'I' else False)
             mask = ifInfected(self.grid)
             infected = self.grid[mask]
+            ifx, ify = getLoc(base[mask])
+        
         else:
-            infected = list()
-            for p in self.grid.ravel():
+            for i in range(self.grid.size):
+                p = self.grid.ravel()[i]
                 try:
                     pstate = self.people[p].state
                 except IndexError:
@@ -89,13 +97,13 @@ class Community:
                     pstate = city.Communities[communityID].people[localID].state
                 if pstate == 'I':
                     infected.append(p)
+                    pLoc = getLoc(i)
+                    ifx.append(pLoc[0]); ify.append(pLoc[1])
+
             infected = np.array(infected)
         
         if infected.size == 0 :
             raise ValueError("No individual is currently infected")
-
-        getLoc = np.vectorize(lambda x : (x // base.shape[0], x % base.shape[1]))
-        ifx, ify = getLoc(base[mask])
 
         return list(zip(ifx, ify, infected))
 
@@ -190,7 +198,7 @@ class Community:
         Also update the location and state of each individual in community."""
 
         #infect neighbours of those infected based upon individual's R0
-        infected = self.getInfected()
+        infected = self.getInfected(city=city)
         neighboursOfInfected = self.getNeighbours(infected, 1)
         infectedPeople = list(zip(*infected))[2]
 
@@ -229,7 +237,7 @@ class Community:
             try:
                 p = self.people[infectedPeople[k]]
             except IndexError:
-                communityID, localID = divmod(p, self.__numPeople)
+                communityID, localID = divmod(infectedPeople[k], self.__numPeople)
                 p = city.Communities[communityID].people[localID]
             
             #increase individual's infected time
@@ -240,18 +248,16 @@ class Community:
                 self.__totalRecovered += 1
                 self.__totalInfected -= 1
 
-
         #update state and locations of individuals
         self.updateLocations()
         #show the state
-        self.showState()
+        self.showState(city=city)
         #shuffle grid along both axes
         np.apply_along_axis(np.random.shuffle, 1, self.grid)
         np.random.shuffle(self.grid)
 
 class City:
     __noOfTravellers = 0
-    __numSusceptible = 0
     __numInfected = 0
     __numRecovered = 0
 
@@ -263,10 +269,9 @@ class City:
         #Community size fixed to 100 as of now
         self.numCommunities = population // 100
         self.Communities = [Community(self.name, _, 100) for _ in range(self.numCommunities)]
-        self.avgPeopleContact = 15
-        self.transmission = 0.2
-        self.infected = list()
-        self.dead = list()
+        #self.avgPeopleContact = 15
+        #self.transmission = 0.2
+        
 
     def __str__(self):
         return self.name
@@ -283,7 +288,7 @@ class City:
             raise ValueError("number of individuals must be less than size of grid")
 
         #way to differentiate travellers from residents - local v global ID
-        globalIDext = lambda c : c * self.Communities[c].__numPeople
+        globalIDext = lambda c : c * self.Communities[c]._Community__numPeople
         #localIDrev = lambda x, c : x % self.Communities[c].__numPeople
 
         flattened1 = np.arange(grid1.size)[np.where(grid1.ravel() > -1)]
@@ -303,18 +308,22 @@ class City:
         return (grid1, grid2)
     
     def updateCity(self):
-        #traveling not implemented
+        #unequal traveling not implemented
+        
+        #self.__numSusceptible is computed using getNumSusceptible()
+        self.__numInfected = 0
+        self.__numRecovered = 0
+        
         for c in self.Communities:
             c.updateGrid(city=self)
-            self.__numSusceptible += c.getTotalSusceptible
-            self.__numInfected += c.getTotalInfected
-            self.__numRecovered += c.getTotalRecovered
+            self.__numInfected += c.getTotalInfected()
+            self.__numRecovered += c.getTotalRecovered()
 
     def getNumInfected(self):
         return self.__numInfected
 
     def getNumSusceptible(self):
-        return self.__numSusceptible
+        return (self.population - self.__numInfected - self.__numRecovered)
 
     def getNumRecovered(self):
         return self.__numRecovered

@@ -1,3 +1,8 @@
+import math
+
+def squareGridShape(n):
+    return [math.ceil(n**0.5)] * 2
+
 def getClosestFactors(n):
     i = int(n ** 0.5)
     while (n % i != 0):
