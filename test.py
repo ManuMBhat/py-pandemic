@@ -1,4 +1,5 @@
-from Base import *
+from Base import City
+import math, random
 import matplotlib.pyplot as plt
 
 def test():

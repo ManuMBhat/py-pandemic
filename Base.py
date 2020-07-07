@@ -11,16 +11,6 @@ R0list = [2, 3, 4]
 #recoveryTimes = [i for i in range(14, 7*5)]
 recoveryTimes = [i for i in range(4, 12)]
 
-"""
-    Helper function
-    Chooses a destination city and adds traveller to that city
-"""
-def travel_to_destination(cities, originCityName, traveller):
-    destination = originCityName
-    while(destination == originCityName):
-        destination = random.choice(cities)
-    destination.add_person(traveller)
-
 class Person:
     state = 'S'
     timeInfected = 0
@@ -289,7 +279,6 @@ class City:
 
         #way to differentiate travellers from residents - local v global ID
         globalIDext = lambda c : c * self.Communities[c]._Community__numPeople
-        #localIDrev = lambda x, c : x % self.Communities[c].__numPeople
 
         flattened1 = np.arange(grid1.size)[np.where(grid1.ravel() > -1)]
         id1s = np.random.choice(flattened1, size=n, replace=False)
