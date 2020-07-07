@@ -1,33 +1,30 @@
-from Base import City,Person
+from Base import City
+import math, random
 import matplotlib.pyplot as plt
 
-
 def test():
-    nums = 100
-    output = list()
-    death = list()
+    "Does not include traveling"
+
+    #City of population 1000 with 10 communities each of size 100
+    blore = City("Bangalore", 1000, 10, 1)
+    nS, nI, nR = [], [], []
     
-    a = City("Mumbai",1000000,240000000000,0.3)
-    person = a.get_person(10)
-    person.set_infected(1)
-    for i in range(nums):
-        a.infection_run()
-        temp = a.get_population()
-        if i > 6 and i%5 == 1 and a.get_avgPeopleContact() >= 0: 
-            a.set_healthCare(0.7)
-            a.social_distancing_protocol(0.5)
-        a.health_run()
-        output.append(a.get_infected_num())
-        death.append(temp - a.get_population())
-        print(output[-1])
-        if(output[-1] <= 0):
-            break
-    plt.plot(output)
-    plt.plot(death)
-    cumalativeDeath = [sum(death[0:i]) for i in range(len(death))]
-    plt.plot(cumalativeDeath)
+    #create patient zero in each community
+    for _ in range(100):
+        pZero = math.trunc(random.uniform(0, 100))
+        blore.Communities[_].people[pZero].state = 'I'
+    
+    nS.append(blore.getNumSusceptible())
+    nI.append(blore.getNumInfected())
+    nR.append(blore.getNumRecovered())
+    for _ in range(15):
+        blore.updateCity()
+        nS.append(blore.getNumSusceptible())
+        nI.append(blore.getNumInfected())
+        nR.append(blore.getNumRecovered())
+    
+    plt.plot(nS, 'b', nI, 'r', nR, 'grey')
     plt.show()
-        
+
 if __name__ == "__main__":
     test()
-    
