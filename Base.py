@@ -53,6 +53,9 @@ class Community:
 
         self.outsiders = dict()
 
+    def getNumPeople(self):
+        return self.__numPeople
+
     def getTotalInfected(self):
         return self.__totalInfected
 
