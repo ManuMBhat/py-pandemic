@@ -66,7 +66,7 @@ class Community:
         return (self.__numPeople - self.__totalInfected - self.__totalRecovered)
 
     def getInfected(self, city=None):
-        """returns in the form (x, y, array[x, y])"""
+        """returns a list of people infected in the form (x, y, grid[x, y])"""
         
         base = np.arange(self.__numPeople).reshape(self.grid.shape)
         getLoc = lambda x : (x // base.shape[0], x % base.shape[1])
@@ -123,8 +123,8 @@ class Community:
         #print(stateGrid)
 
     def getRandomSample(self, n):
-        """Returns in the form (x, y, array[x, y]).
-        Does not return blanks ie -1 in grid"""
+        """Returns in a list of randomly selected individuals in the form (x, y, grid[x, y]).
+        Does not return blanks ie -1 entries in grid"""
 
         if n > self.grid.size:
             raise ValueError("Sample size must be smaller than number of elements in array")
@@ -187,8 +187,8 @@ class Community:
                         print("this is embarrassing, pls fix")
 
     def updateGrid(self, city=None):
-        """shuffle array based on Mersenne Twister algorithm in np.random;
-        Also update the location and state of each individual in community."""
+        """Shuffle array based on Mersenne Twister algorithm in np.random;
+        Update the location and state of each individual in community."""
 
         #infect neighbours of those infected based upon individual's R0
         infected = self.getInfected(city=city)
@@ -287,19 +287,69 @@ class City:
         globalIDext = lambda c : c * self.Communities[c]._Community__numPeople
 
         flattened1 = np.arange(grid1.size)[np.where(grid1.ravel() > -1)]
-        id1s = np.random.choice(flattened1, size=n, replace=False)
-        id1x = id1s // grid1.shape[0]
-        id1y = id1s % grid1.shape[1]
+        id1 = np.random.choice(flattened1, size=n, replace=False)
+        id1x = id1 // grid1.shape[0]
+        id1y = id1 % grid1.shape[1]
         out1 = grid1[id1x, id1y] + globalIDext(c1)
 
         flattened2 = np.arange(grid2.size)[np.where(grid2.ravel() > -1)]
-        id2s = np.random.choice(flattened2, size=n, replace=False)
-        id2x = id2s // grid2.shape[0]
-        id2y = id2s % grid2.shape[1]
+        id2 = np.random.choice(flattened2, size=n, replace=False)
+        id2x = id2 // grid2.shape[0]
+        id2y = id2 % grid2.shape[1]
         out2 = grid2[id2x, id2y] + globalIDext(c2)
 
         grid1[id1x, id1y], grid2[id2x, id2y] = out2, out1
 
+        return (grid1, grid2)
+
+    def unequalGridCrossing(self, C1, C2, outC1, outC2):
+        """Shuffle in a way that one grid loses abs(outC1 - outC2) individuals.
+        If outC1 is equal to outC2 call equalGridCrossing."""
+        
+        if not (isinstance(outC1, int) or isinstance(outC2, int)):
+            raise TypeError("Number of individuals to swap must be of type int")
+
+        grid1, grid2 = self.Communities[C1].grid, self.Communities[C2].grid
+        if (outC1 > grid1.size or outC2 > grid2.size):
+            raise ValueError("Cannot relocate more than grid population")
+
+        if (outC1 == outC2):
+            self.equalGridCrossing(grid1, grid2, outC1)
+        
+        excess = abs(outC1 - outC2)
+        flattened1 = np.arange(grid1.size)[np.where(grid1.ravel() > -1)]
+        id1 = np.random.choice(flattened1, size=outC1, replace=False)
+        id1x = id1 // grid1.shape[0]
+        id1y = id1 % grid1.shape[1]
+
+        flattened2 = np.arange(grid2.size)[np.where(grid2.ravel() > -1)]
+        id2 = np.random.choice(flattened2, size=outC2, replace=False)
+        id2x = id2 // grid2.shape[0]
+        id2y = id2 % grid2.shape[1]
+
+        #change local to global IDs
+        globalIDext = lambda c : c * self.Communities[c]._Community__numPeople
+        outGrid1 = grid1[id1x, id1y] + globalIDext(C1)
+        outGrid2 = grid2[id2x, id2y] + globalIDext(C2)
+
+        if outC1 > outC2:
+            #swap individuals that can be relocated in place
+            grid1[id1x[:-excess], id1y[:-excess]], grid2[id2x, id2y] = outGrid2, outGrid1[:-excess]
+            #swap excess
+            nrow = np.full(grid2.shape[1], -1)
+            nrow[:excess] = outGrid1[outC2:]
+            #mark lost individuals in grid1 as -1
+            grid1[id1x[outC2:], id1y[outC2:]] = -1
+            #stack the new row created
+            grid2 = np.vstack((grid2, nrow))
+
+        else :
+            grid2[id2x[:-excess], id2y[:-excess]], grid1[id1x, id1y] = outGrid1, outGrid2[:-excess]
+            nrow = np.full(grid2.shape[1], -1)
+            nrow[:excess] = outGrid2[outC1:]
+            grid2[id2x[outC1:], id2y[outC1:]] = -1
+            grid1 = np.vstack((grid1, nrow))
+        
         return (grid1, grid2)
     
     def updateCity(self):
