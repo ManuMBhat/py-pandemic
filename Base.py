@@ -6,7 +6,7 @@ from utils import squareGridShape, getBoundary
 MAX_GDP = 1000000000000
 random.seed(0)
 deathChance = 0.05
-
+THRESHOLD_FOR_HOTSPOT = 0.01
 R0list = [2, 3, 4]
 #recoveryTimes = [i for i in range(14, 7*5)]
 recoveryTimes = [i for i in range(4, 12)]
@@ -120,7 +120,7 @@ class Community:
                 else:
                     print("this is embarrassing, pls fix") 
         
-        print(stateGrid)
+        #print(stateGrid)
 
     def getRandomSample(self, n):
         """Returns in the form (x, y, array[x, y]).
@@ -248,7 +248,10 @@ class Community:
         #shuffle grid along both axes
         np.apply_along_axis(np.random.shuffle, 1, self.grid)
         np.random.shuffle(self.grid)
-
+    def isHotspot(self,threshold=THRESHOLD_FOR_HOTSPOT):
+        if self.__totalInfected >= self.__numPeople:
+            return True 
+        return False
 class City:
     __noOfTravellers = 0
     __numInfected = 0

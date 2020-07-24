@@ -1,5 +1,5 @@
 import math
-
+import numpy as np 
 def squareGridShape(n):
     return [math.ceil(n**0.5)] * 2
 
@@ -18,3 +18,4 @@ def getBoundary(x, r, n):
     if upper > n:
         upper = n
     return (lower, upper)
+
